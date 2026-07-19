@@ -4,12 +4,13 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-aut
 import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBgLiVHhLxxLplrgqqBvK1iW2MLPpaSf2o",
-  authDomain: "mlt-site-94a65.firebaseapp.com",
-  projectId: "mlt-site-94a65",
-  storageBucket: "mlt-site-94a65.firebasestorage.app",
-  messagingSenderId: "131916366588",
-  appId: "1:131916366588:web:c9172c622b943722020d79"
+  apiKey: "AIzaSyDrU-nINRAvMl5t_beZEPkfMjZ5uVE9T_8",
+  authDomain: "mlt-site.firebaseapp.com",
+  projectId: "mlt-site",
+  storageBucket: "mlt-site.firebasestorage.app",
+  messagingSenderId: "305436045302",
+  appId: "1:305436045302:web:04165a39ec32106051e1d7",
+  measurementId: "G-5F51F03G4W"
 };
 
 // Initialize Firebase
