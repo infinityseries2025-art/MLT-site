@@ -646,5 +646,3 @@ h1{ text-shadow:0 0 20px rgba(47,111,237,0.22); }
 /* Контейнер капчи внутри форм регистрации / заявки на турнир */
 .captcha-box{ display:flex; justify-content:center; min-height:0; }
 .captcha-box:empty{ display:none; }
-.simple-captcha-input{ background:var(--panel-2); border:1px solid var(--line-strong); color:var(--ink); padding:8px 10px; font-family:inherit; font-size:13px; border-radius:var(--radius); text-align:center; }
-.simple-captcha-input:focus{ border-color:var(--accent); outline:none; }

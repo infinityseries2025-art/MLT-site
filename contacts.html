@@ -78,6 +78,11 @@
         <span class="contact-card-name" data-i18n="labelTelegram">Telegram</span>
         <span class="contact-card-handle">@mlt_esports</span>
       </a>
+      <a class="contact-card" data-social="discord" href="#" target="_blank" rel="noopener">
+        <span class="contact-card-icon">🎮</span>
+        <span class="contact-card-name" data-i18n="labelDiscord">Discord</span>
+        <span class="contact-card-handle">discord.gg/mlt</span>
+      </a>
       <a class="contact-card" data-social="twitch" href="#" target="_blank" rel="noopener">
         <span class="contact-card-icon">📺</span>
         <span class="contact-card-name">Twitch</span>
@@ -128,6 +133,7 @@
     </nav>
     <div class="footer-social">
       <a href="#" data-social="telegram" target="_blank" rel="noopener">TG</a>
+      <a href="#" data-social="discord" target="_blank" rel="noopener">DC</a>
       <a href="#" data-social="twitch" target="_blank" rel="noopener">TW</a>
       <a href="#" data-social="vk" target="_blank" rel="noopener">VK</a>
     </div>
@@ -246,7 +252,7 @@
     <h2 style="font-size:19px; margin-bottom:6px;" data-i18n="tournamentRegTitle">Заявка на турнир</h2>
     <p class="form-note" id="trTournamentName" style="margin-bottom:14px;"></p>
     <form id="tournamentRegForm" style="display:flex; flex-direction:column; gap:12px;">
-      <div class="field"><label data-i18n="labelContact">Контакт для связи (Telegram и т.п.)</label><input type="text" id="trContact" required></div>
+      <div class="field"><label data-i18n="labelContact">Контакт для связи (Telegram, Discord и т.п.)</label><input type="text" id="trContact" required></div>
       <div id="trCaptcha" class="captcha-box"></div>
       <button class="btn primary" type="submit" data-i18n="btnSubmitRequest">Подать заявку</button>
       <p class="form-note" id="trNote"></p>
@@ -254,6 +260,7 @@
   </div>
 </div>
 
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <script src="config.js"></script>
 <script type="module" src="assets/js/firebase-config.js"></script>
 <script type="module" src="assets/js/main.js"></script>

@@ -125,68 +125,49 @@ let adminLoggedIn = false;
 let pendingRequestsCount = 0;
 
 /* --------------------------------------------------------------
-   CAPTCHA — простая самостоятельная проверка «я не робот» (пример:
-   сложить два числа) для формы регистрации аккаунта и заявки на
-   турнир.
-
-   Раньше здесь использовалась Google reCAPTCHA, которая грузится со
-   скрипта www.google.com/recaptcha/api.js. У части посетителей из РФ
-   этот скрипт не загружается вообще (блокировки/нестабильный доступ
-   к сервисам Google), из-за чего виджет капчи никогда не появлялся —
-   а форма при этом ждала ответ капчи и НИКОГДА не пропускала
-   отправку. Человек просто не мог зарегистрироваться или подать
-   заявку, и это выглядело как «сайт сломан».
-
-   Новая капча ничего не грузит из интернета — считается прямо в
-   браузере, поэтому не может «зависнуть» или быть заблокированной.
-   Это не защита военного уровня, но она сразу отсекает простых ботов
-   и не мешает живым людям. Настоящая защита на уровне базы данных —
-   это Firestore Rules (см. firestore.rules) и, при желании, Firebase
-   App Check.
+   CAPTCHA (reCAPTCHA v2 «Я не робот») — форма регистрации аккаунта
+   и заявки на турнир. Ключ задаётся в config.js (window.MLT_CONFIG.
+   recaptcha.siteKey). Если ключ не задан, виджеты просто не рисуются
+   и проверка не блокирует отправку форм (чтобы сайт не сломался у
+   тех, кто ещё не завёл себе ключ).
+   ВАЖНО: это защита только от отправки через саму HTML-форму — она
+   не защищает от прямых запросов к Firebase в обход интерфейса.
+   Настоящая защита на уровне Firestore — это Firebase App Check.
 -------------------------------------------------------------- */
-const captchaAnswers = Object.create(null); // boxId -> правильный ответ (число)
+const RECAPTCHA_SITE_KEY = (window.MLT_CONFIG && window.MLT_CONFIG.recaptcha && window.MLT_CONFIG.recaptcha.siteKey) || "";
+let regCaptchaWidgetId = null;
+let trCaptchaWidgetId = null;
 
-function captchaMarkup(boxId){
-  const a = 1 + Math.floor(Math.random() * 8);
-  const b = 1 + Math.floor(Math.random() * 8);
-  captchaAnswers[boxId] = a + b;
-  const label = LANG === "en" ? "Confirm you're human" : "Подтвердите, что вы не робот";
-  return `
-    <div class="simple-captcha" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-      <span style="font-size:13px; opacity:0.85;">${label}: <b>${a} + ${b} = ?</b></span>
-      <input type="text" inputmode="numeric" autocomplete="off" class="simple-captcha-input"
-        data-captcha-box="${boxId}" style="width:70px;" maxlength="3">
-    </div>
-  `;
-}
-
-// Рисует (или перерисовывает) капчу в контейнере с данным id, если он есть на странице.
 function renderCaptchaWidgets(){
-  ["regCaptcha", "trCaptcha"].forEach(boxId => {
-    const box = document.getElementById(boxId);
-    if (box) box.innerHTML = captchaMarkup(boxId);
-  });
+  if (!RECAPTCHA_SITE_KEY) return;
+  if (!(window.grecaptcha && window.grecaptcha.render)) {
+    setTimeout(renderCaptchaWidgets, 200);
+    return;
+  }
+  const regBox = document.getElementById("regCaptcha");
+  if (regBox && regCaptchaWidgetId === null) {
+    regCaptchaWidgetId = window.grecaptcha.render(regBox, { sitekey: RECAPTCHA_SITE_KEY });
+  }
+  const trBox = document.getElementById("trCaptcha");
+  if (trBox && trCaptchaWidgetId === null) {
+    trCaptchaWidgetId = window.grecaptcha.render(trBox, { sitekey: RECAPTCHA_SITE_KEY });
+  }
 }
 
-// Возвращает true, если ответ на капчу верный. boxId — id контейнера капчи
-// (например "regCaptcha" или "trCaptcha"), а не число, как раньше у reCAPTCHA.
-function checkCaptcha(boxId, noteEl){
-  const box = document.getElementById(boxId);
-  if (!box) return true; // на этой странице капчи нет вообще — не блокируем
-  const input = box.querySelector(".simple-captcha-input");
-  const given = input ? parseInt(input.value, 10) : NaN;
-  const ok = !Number.isNaN(given) && given === captchaAnswers[boxId];
+// Возвращает true, если капчу можно (или не нужно) пропускать дальше.
+// Если ключ капчи не настроен в config.js — проверка отключена.
+function checkCaptcha(widgetId, noteEl){
+  if (!RECAPTCHA_SITE_KEY) return true;
+  const ok = widgetId !== null && window.grecaptcha && window.grecaptcha.getResponse(widgetId);
   if (!ok && noteEl) {
     noteEl.style.color = "var(--loss)";
-    noteEl.textContent = LANG === "en" ? "Please solve the check above correctly." : "Решите пример выше правильно.";
+    noteEl.textContent = LANG === "en" ? "Please confirm you're not a robot." : "Подтвердите, что вы не робот.";
   }
-  return ok;
+  return !!ok;
 }
 
-// Перегенерирует пример (после успешной или неуспешной отправки формы).
-function resetCaptcha(boxId){
-  const box = document.getElementById(boxId);
-  if (box) box.innerHTML = captchaMarkup(boxId);
+function resetCaptcha(widgetId){
+  if (widgetId !== null && window.grecaptcha && window.grecaptcha.reset) window.grecaptcha.reset(widgetId);
 }
 let pendingAccountsCount = 0;
 
@@ -296,54 +277,21 @@ let pendingNickname = null;
 /* --------------------------------------------------------------
    AUTH
 -------------------------------------------------------------- */
-// Небольшая пауза — используется для повторных попыток чтения из Firestore.
-const wait = ms => new Promise(res => setTimeout(res, ms));
-
-// getDoc иногда падает с ошибкой "client is offline" в первые мгновения
-// после входа — Firestore ещё не успел установить соединение (особенно
-// на медленном/нестабильном интернете). Раньше эта ошибка просто
-// вылетала необработанной, из-за чего строки updateAuthUI()/
-// renderPageContent() ниже НИКОГДА не выполнялись: модалка входа
-// закрывалась (это происходит в handleLogin, до этого места), а шапка
-// сайта так и оставалась с кнопкой «Войти» — как будто вход не удался,
-// хотя на самом деле человек уже был залогинен. Теперь при такой ошибке
-// делаем несколько попыток подряд, прежде чем сдаться.
-async function getDocWithRetry(ref, attempts = 4, delayMs = 700){
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await getDoc(ref);
-    } catch (err) {
-      const isLastAttempt = i === attempts - 1;
-      if (isLastAttempt) throw err;
-      await wait(delayMs);
-    }
-  }
-}
-
 onAuthStateChanged(auth, async (user) => {
   currentUser = user;
-  try {
-    if (user) {
-      let snap = await getDocWithRetry(doc(db, "users", user.uid));
-      if (!snap.exists()) {
-        const anyUsers = await getDocs(collection(db, "users"));
-        const role = anyUsers.empty ? "admin" : "user";
-        const nickname = pendingNickname || user.email.split("@")[0];
-        pendingNickname = null;
-        await setDoc(doc(db, "users", user.uid), { email: user.email, nickname, role, teamId: null, createdAt: serverTimestamp() });
-        snap = await getDocWithRetry(doc(db, "users", user.uid));
-      }
-      currentUserDoc = { id: user.uid, ...snap.data() };
-    } else {
-      currentUserDoc = null;
+  if (user) {
+    let snap = await getDoc(doc(db, "users", user.uid));
+    if (!snap.exists()) {
+      const anyUsers = await getDocs(collection(db, "users"));
+      const role = anyUsers.empty ? "admin" : "user";
+      const nickname = pendingNickname || user.email.split("@")[0];
+      pendingNickname = null;
+      await setDoc(doc(db, "users", user.uid), { email: user.email, nickname, role, teamId: null, createdAt: serverTimestamp() });
+      snap = await getDoc(doc(db, "users", user.uid));
     }
-  } catch (err) {
-    // Даже если Firestore так и не ответил (сеть действительно недоступна),
-    // не оставляем человека в подвешенном состоянии с "неработающей"
-    // шапкой сайта — показываем хотя бы email и понятное сообщение вместо
-    // молчаливого зависания.
-    console.error("Не удалось загрузить профиль пользователя:", err);
-    if (user) currentUserDoc = { id: user.uid, email: user.email, nickname: user.email.split("@")[0], role: "user", teamId: null, _loadError: true };
+    currentUserDoc = { id: user.uid, ...snap.data() };
+  } else {
+    currentUserDoc = null;
   }
   updateAuthUI();
   renderPageContent();
@@ -369,7 +317,7 @@ async function handleRegister(e){
   const nickname = document.getElementById("regNickname").value.trim() || email.split("@")[0];
   const msg = document.getElementById("authRegisterMsg");
   msg.textContent = ""; msg.style.color = "";
-  if (!checkCaptcha("regCaptcha", msg)) return false;
+  if (!checkCaptcha(regCaptchaWidgetId, msg)) return false;
   try {
     pendingNickname = nickname;
     await createUserWithEmailAndPassword(auth, email, pass);
@@ -377,12 +325,13 @@ async function handleRegister(e){
     // местом — обработчиком onAuthStateChanged выше, который сработает
     // сразу после успешного createUserWithEmailAndPassword.
     document.getElementById("authModal").classList.remove("open");
-    resetCaptcha("regCaptcha");
+    resetCaptcha(regCaptchaWidgetId);
   } catch (err) {
+    console.error("[MLT] Register failed:", err);
     pendingNickname = null;
     msg.style.color = "var(--loss)";
     msg.textContent = friendlyAuthError(err);
-    resetCaptcha("regCaptcha");
+    resetCaptcha(regCaptchaWidgetId);
   }
   return false;
 }
@@ -397,6 +346,7 @@ async function handleLogin(e){
     await signInWithEmailAndPassword(auth, email, pass);
     document.getElementById("authModal").classList.remove("open");
   } catch (err) {
+    console.error("[MLT] Login failed:", err);
     msg.style.color = "var(--loss)";
     msg.textContent = friendlyAuthError(err);
   }
@@ -485,7 +435,7 @@ function openProfileModal(){
     });
   }
 
-  // Контакты (Telegram/Faceit)
+  // Контакты (Telegram/Discord/Faceit)
   const contactBox = document.getElementById("pmContactBox");
   if (contactBox) {
     const lastUpdated = currentUserDoc.faceitUpdatedAt && currentUserDoc.faceitUpdatedAt.toDate
@@ -496,6 +446,7 @@ function openProfileModal(){
         <h3>${t("contactsSectionTitle")}</h3>
         <form id="profileContactsForm" style="display:flex; flex-direction:column; gap:12px;">
           <div class="field"><label>${t("labelTelegram")}</label><input type="text" id="pmTelegram" placeholder="@username" value="${currentUserDoc.telegram || ""}"></div>
+          <div class="field"><label>${t("labelDiscord")}</label><input type="text" id="pmDiscord" placeholder="username" value="${currentUserDoc.discord || ""}"></div>
           <div class="field"><label>${t("labelFaceitNickname")}</label><input type="text" id="pmFaceitNickname" placeholder="nickname" value="${currentUserDoc.faceitNickname || ""}"></div>
           <button class="btn primary sm" type="submit">${t("btnSaveContacts")}</button>
           <p class="form-note" id="pmContactsNote"></p>
@@ -540,7 +491,7 @@ async function submitProfileNickname(e){
 }
 
 /* --------------------------------------------------------------
-   КОНТАКТЫ ПРОФИЛЯ (Telegram/Faceit) + запрос обновления Elo
+   КОНТАКТЫ ПРОФИЛЯ (Telegram/Discord/Faceit) + запрос обновления Elo
    Ключ Faceit Data API НИКОГДА не хранится в этом файле — обновление
    Elo делает отдельный процесс на GitHub Actions по расписанию (см.
    .github/workflows/faceit-elo-sync.yml и FACEIT_SETUP.md). Клиент
@@ -551,11 +502,12 @@ async function submitProfileNickname(e){
 async function submitProfileContacts(e){
   e.preventDefault();
   const telegram = document.getElementById("pmTelegram").value.trim();
+  const discord = document.getElementById("pmDiscord").value.trim();
   const faceitNickname = document.getElementById("pmFaceitNickname").value.trim();
   const note = document.getElementById("pmContactsNote");
   note.textContent = ""; note.style.color = "";
   try {
-    const patch = { telegram: telegram || null, faceitNickname: faceitNickname || null };
+    const patch = { telegram: telegram || null, discord: discord || null, faceitNickname: faceitNickname || null };
     await updateDoc(doc(db, "users", currentUser.uid), patch);
     Object.assign(currentUserDoc, patch);
     note.style.color = "var(--win)";
@@ -608,22 +560,6 @@ function renderAccountPage(){
   }
   gate.style.display = "none";
   shell.style.display = "";
-
-  const existingWarn = shell.querySelector("#acLoadErrorWarn");
-  if (currentUserDoc._loadError) {
-    if (!existingWarn) {
-      const warn = document.createElement("p");
-      warn.id = "acLoadErrorWarn";
-      warn.className = "form-note";
-      warn.style.color = "var(--loss)";
-      warn.textContent = LANG === "en"
-        ? "Some profile data couldn't load due to a connection issue. Please refresh the page."
-        : "Часть данных профиля не загрузилась из-за проблемы с соединением. Обновите страницу.";
-      shell.prepend(warn);
-    }
-  } else if (existingWarn) {
-    existingWarn.remove();
-  }
 
   // Hero: фото, ник, роль, дата регистрации
   const photoBox = document.getElementById("acPhotoBox");
@@ -682,6 +618,8 @@ function renderAccountPage(){
   // Вкладка «Faceit и контакты»
   const telegramInput = document.getElementById("acTelegram");
   if (telegramInput) telegramInput.value = currentUserDoc.telegram || "";
+  const discordInput = document.getElementById("acDiscord");
+  if (discordInput) discordInput.value = currentUserDoc.discord || "";
   const faceitInput = document.getElementById("acFaceitNickname");
   if (faceitInput) faceitInput.value = currentUserDoc.faceitNickname || "";
   const faceitStatsBox = document.getElementById("acFaceitStats");
@@ -740,11 +678,12 @@ async function submitAccountPhoto(e){
 async function submitAccountContacts(e){
   e.preventDefault();
   const telegram = document.getElementById("acTelegram").value.trim();
+  const discord = document.getElementById("acDiscord").value.trim();
   const faceitNickname = document.getElementById("acFaceitNickname").value.trim();
   const note = document.getElementById("acContactsNote");
   note.textContent = ""; note.style.color = "";
   try {
-    const patch = { telegram: telegram || null, faceitNickname: faceitNickname || null };
+    const patch = { telegram: telegram || null, discord: discord || null, faceitNickname: faceitNickname || null };
     await updateDoc(doc(db, "users", currentUser.uid), patch);
     Object.assign(currentUserDoc, patch);
     note.style.color = "var(--win)";
@@ -918,7 +857,7 @@ async function submitTournamentReg(e){
     note.textContent = t("tournamentRegNeedApprovedTeam");
     return;
   }
-  if (!checkCaptcha("trCaptcha", note)) return;
+  if (!checkCaptcha(trCaptchaWidgetId, note)) return;
   try {
     const already = REQUESTS.find(r => r.tournamentId === tournamentId && r.teamId === currentUserDoc.teamId && r.status !== "rejected");
     if (already) {
@@ -932,12 +871,12 @@ async function submitTournamentReg(e){
     });
     note.style.color = "var(--win)";
     note.textContent = LANG === "en" ? "Request sent, awaiting admin approval." : "Заявка отправлена, ожидайте подтверждения от админа.";
-    resetCaptcha("trCaptcha");
+    resetCaptcha(trCaptchaWidgetId);
     setTimeout(() => closeModal("tournamentRegModal"), 1200);
   } catch (err) {
     note.style.color = "var(--loss)";
     note.textContent = (LANG === "en" ? "Error: " : "Ошибка: ") + (err.message || err);
-    resetCaptcha("trCaptcha");
+    resetCaptcha(trCaptchaWidgetId);
   }
 }
 
@@ -1132,17 +1071,17 @@ function renderMatches(){
 }
 
 function renderRankings(){
-  const sortedTeams = [...approvedTeams()].sort((a,b) => (b.mltPoints||0) - (a.mltPoints||0) || (b.rating||0) - (a.rating||0));
+  const sortedTeams = [...approvedTeams()].sort((a,b) => (b.rating||0) - (a.rating||0));
   const teamsTable = document.getElementById("teamsTable");
   if (teamsTable) {
     teamsTable.innerHTML = `
-      <div class="data-row head" style="grid-template-columns:46px 2fr 1fr 1fr 1.6fr;"><span>${t("thRank")}</span><span>${t("thTeam")}</span><span>${t("thMltPoints")}</span><span>${t("thWinrate")}</span><span>${t("thForm")}</span></div>
+      <div class="data-row head" style="grid-template-columns:46px 2fr 1fr 1fr 1fr 1fr;"><span>${t("thRank")}</span><span>${t("thTeam")}</span><span>${t("thWinrate")}</span><span>${t("thElo")}</span><span>${t("thRating")}</span><span>${t("thTrophies")}</span></div>
       ${sortedTeams.map((tm,i) => {
         const roster = PLAYERS.filter(p => p.teamId === tm.id);
         return `
-        <div class="data-row" data-team-row="${tm.id}" style="grid-template-columns:46px 2fr 1fr 1fr 1.6fr; cursor:pointer;">
+        <div class="data-row" data-team-row="${tm.id}" style="grid-template-columns:46px 2fr 1fr 1fr 1fr 1fr; cursor:pointer;">
           <span class="d-rank">${i+1}</span><span class="d-team">${tagBlock(tm, 30)}${tm.name}</span>
-          <span class="mono">${tm.mltPoints||0}</span><span>${tm.winrate||0}%</span><span>${(tm.form&&tm.form.length)?formPills(tm.form):'<span class="d-dim">—</span>'}</span>
+          <span>${tm.winrate||0}%</span><span class="mono">${tm.elo||1000}</span><span class="mono">${(tm.rating||0).toFixed(2)}</span><span>${Array.isArray(tm.trophies) ? tm.trophies.length : (tm.trophies||0)}</span>
         </div>
         <div class="team-row-expand" id="teamExpand-${tm.id}">
           <div class="team-row-expand-inner">
@@ -1385,7 +1324,7 @@ function renderPlayerProfilePage(){
 
   // Подтягиваем данные из личного кабинета пользователя с совпадающим ником:
   // фото профиля (если у самой карточки игрока фото не задано), контакты
-  // (Telegram) и Elo/уровень Faceit.
+  // (Telegram/Discord) и Elo/уровень Faceit.
   const linkedUser = findLinkedUserByNick(p.nick);
   const photoUrl = p.photoUrl || (linkedUser && linkedUser.photoUrl) || null;
   const avatarStyle = photoUrl ? `background-image:url('${photoUrl}');background-size:cover;background-position:center;` : "";
@@ -1394,6 +1333,9 @@ function renderPlayerProfilePage(){
   if (linkedUser && linkedUser.telegram) {
     const handle = String(linkedUser.telegram).replace(/^@/, "");
     contactChips.push(`<a class="achv" href="https://t.me/${encodeURIComponent(handle)}" target="_blank" rel="noopener">Telegram: @${handle}</a>`);
+  }
+  if (linkedUser && linkedUser.discord) {
+    contactChips.push(`<span class="achv">Discord: ${linkedUser.discord}</span>`);
   }
   const faceitNick = (linkedUser && linkedUser.faceitNickname) || p.faceitNickname;
   if (faceitNick) {
@@ -2010,7 +1952,7 @@ function renderAdminTeams(){
     
   if (!filteredTeams.length) { allBox.innerHTML = `<div class="empty-state">${searchTerm ? "Ничего не найдено" : t("adminNoTeams")}</div>`; return; }
   allBox.innerHTML = `
-    <div class="data-row head"><span>Команда</span><span>Статус</span><span>MLT очки</span><span>Винрейт</span><span></span></div>
+    <div class="data-row head"><span>Команда</span><span>Статус</span><span>Рейтинг</span><span>Трофеи</span><span></span></div>
     ${filteredTeams.map(tm => {
       const st = teamStatus(tm);
       const badge = st === "pending" ? `<span class="app-status-badge pending">${t("teamStatusPending")}</span>`
@@ -2020,8 +1962,8 @@ function renderAdminTeams(){
       <div class="data-row">
         <span class="d-team">${tagBlock(tm, 28)}${tm.name}</span>
         <span>${badge}</span>
-        <span class="mono">${tm.mltPoints || 0}</span>
-        <span>${tm.winrate || 0}%</span>
+        <span class="mono">${(tm.rating || 0).toFixed(2)}</span>
+        <span>${Array.isArray(tm.trophies) ? tm.trophies.length : (tm.trophies || 0)}</span>
         <span class="row-actions">
           <button class="btn ghost sm" data-edit-team="${tm.id}">✎</button>
           <button class="btn danger sm" data-del-team="${tm.id}">✕</button>
@@ -2044,7 +1986,6 @@ async function rejectTeam(id){
 function openAddTeam(){
   editingTeamId = null;
   document.getElementById("adminTeamForm").reset();
-  document.getElementById("atMltPoints").value = 0;
   document.getElementById("atModalTitle").textContent = "Добавить команду";
   document.getElementById("atSubmitBtn").textContent = "Добавить";
   openModal("adminTeamModal");
@@ -2056,7 +1997,6 @@ function openEditTeam(id){
   editingTeamId = id;
   document.getElementById("adminTeamForm").reset();
   document.getElementById("atName").value = t.name || "";
-  document.getElementById("atMltPoints").value = t.mltPoints || 0;
   document.getElementById("atModalTitle").textContent = "Редактировать команду";
   document.getElementById("atSubmitBtn").textContent = "Сохранить";
   openModal("adminTeamModal");
@@ -2071,7 +2011,6 @@ async function submitTeamForm(e){
   e.preventDefault();
   const name = document.getElementById("atName").value.trim();
   const fileInput = document.getElementById("atLogo");
-  const mltPoints = parseInt(document.getElementById("atMltPoints").value, 10) || 0;
   const note = document.getElementById("atNote");
   note.textContent = ""; note.style.color = "";
   try {
@@ -2080,13 +2019,13 @@ async function submitTeamForm(e){
       logoUrl = await fileToResizedDataURL(fileInput.files[0], 200, 0.72);
     }
     if (editingTeamId) {
-      const patch = { name, mltPoints };
+      const patch = { name };
       if (logoUrl) patch.logoUrl = logoUrl;
       await updateDoc(doc(db, "teams", editingTeamId), patch);
     } else {
       await setDoc(doc(collection(db, "teams")), {
         name, logoUrl: logoUrl || null, ownerUid: null,
-        main: [], reserve: [], rating: 0, winrate: 0, trophies: 0, mltPoints,
+        main: [], reserve: [], rating: 0, winrate: 0, trophies: 0,
         form: [], mapWinrate: {}, status: "approved", createdAt: serverTimestamp()
       });
     }
@@ -3164,7 +3103,7 @@ async function recalcTeamStats(teamId){
     ? +(teamPlayers.reduce((s, p) => s + (p.rating || 0), 0) / teamPlayers.length).toFixed(2)
     : 0;
 
-  await updateDoc(doc(db, "teams", teamId), { winrate, form: form.slice(-10), mapWinrate, rating: playerRating });
+  await updateDoc(doc(db, "teams", teamId), { winrate, form: form.slice(-5), mapWinrate, rating: playerRating });
 }
 
 /* --------------------------------------------------------------

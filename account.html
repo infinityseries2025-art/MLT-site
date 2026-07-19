@@ -119,6 +119,7 @@
         <h3 data-i18n="contactsSectionTitle">Контакты</h3>
         <form id="acContactsForm" style="display:flex; flex-direction:column; gap:12px;">
           <div class="field"><label data-i18n="labelTelegram">Telegram</label><input type="text" id="acTelegram" placeholder="@username"></div>
+          <div class="field"><label data-i18n="labelDiscord">Discord</label><input type="text" id="acDiscord" placeholder="username"></div>
           <div class="field"><label data-i18n="labelFaceitNickname">Ник на Faceit</label><input type="text" id="acFaceitNickname" placeholder="nickname"></div>
           <button class="btn primary sm" type="submit" data-i18n="btnSaveContacts">Сохранить контакты</button>
           <p class="form-note" id="acContactsNote"></p>
@@ -151,6 +152,7 @@
     </nav>
     <div class="footer-social">
       <a href="#" data-social="telegram" target="_blank" rel="noopener">TG</a>
+      <a href="#" data-social="discord" target="_blank" rel="noopener">DC</a>
       <a href="#" data-social="twitch" target="_blank" rel="noopener">TW</a>
       <a href="#" data-social="vk" target="_blank" rel="noopener">VK</a>
     </div>
@@ -246,6 +248,7 @@
   </div>
 </div>
 
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <script src="config.js"></script>
 <script type="module" src="assets/js/firebase-config.js"></script>
 <script type="module" src="assets/js/main.js"></script>

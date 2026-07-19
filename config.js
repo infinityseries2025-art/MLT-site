@@ -7,13 +7,11 @@ window.MLT_CONFIG = {
   siteTitle: "MLT — Esports Platform",
 
   /**
-   * Раньше здесь был ключ Google reCAPTCHA. Он убран: у части
-   * посетителей (особенно из РФ) скрипт Google reCAPTCHA не грузился,
-   * из-за чего капча никогда не появлялась, а форма регистрации/заявки
-   * на турнир никогда не пропускала отправку — сайт выглядел
-   * «сломанным». Теперь капча простая (пример на сложение) и считается
-   * прямо в браузере, без обращения к внешним серверам — настраивать
-   * тут больше ничего не нужно.
+   * reCAPTCHA (защита от ботов на форме регистрации аккаунта и заявки
+   * на турнир). Получите свой ключ на https://www.google.com/recaptcha/admin
+   * — выберите тип "reCAPTCHA v2 — Флажок «Я не робот»" и добавьте туда
+   * домен(ы) вашего сайта (и localhost, если тестируете локально).
+   * Пока здесь пусто — виджет капчи на сайте не показывается.
    */
   recaptcha: {
     siteKey: "",
@@ -45,6 +43,9 @@ window.MLT_CONFIG = {
     telegram: "https://t.me/MLT_CS2",
     telegramLabel: "Telegram",
     telegramHandle: "@mlt_esports",
+    discord: "https://discord.gg/mlt",
+    discordLabel: "Discord",
+    discordHandle: "",
     formTitle: "Обратная связь",
     formNote: "Сообщение попадёт администратору сайта.",
     submitButton: "Отправить сообщение",
@@ -59,6 +60,7 @@ window.MLT_CONFIG = {
   /** Ссылки на соцсети (футер и контакты) */
   social: {
     telegram: "https://t.me/MLT_CS2",
+    discord: "",
     twitch: "https://www.twitch.tv/mlt_cs2",
     vk: "https://vk.ru/mlt_cs2",
   },

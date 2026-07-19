@@ -55,14 +55,14 @@ service cloud.firestore {
     //
     // Elo/Faceit + контакты (см. FACEIT_SETUP.md): правило update ниже уже
     // разрешает пользователю писать любые свои поля, кроме role, поэтому
-    // отдельного правила для telegram/faceitNickname/faceitUrl/
+    // отдельного правила для telegram/discord/faceitNickname/faceitUrl/
     // faceitElo/faceitLevel/faceitUpdatedAt/faceitUpdateRequested не
     // требуется — они все под общим self-update правилом. faceitElo и
     // faceitLevel на практике пишет процесс GitHub Actions через Firebase
     // Admin SDK (service account), который проверки правил Firestore не
     // проходит вообще (доверенный серверный доступ) — правило здесь важно
     // только для того, чтобы клиент мог сам поставить флаг
-    // faceitUpdateRequested и сохранить свой faceitNickname/telegram.
+    // faceitUpdateRequested и сохранить свой faceitNickname/telegram/discord.
     match /users/{uid} {
       allow read: if true;
       allow create: if isSignedIn() && request.auth.uid == uid;
